@@ -5,7 +5,7 @@ on:
 
 jobs:
   build:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-22.04
     
     steps:
     - name: Checkout code
@@ -23,8 +23,7 @@ jobs:
           git zip unzip openjdk-17-jdk \
           python3-pip autoconf libtool pkg-config \
           zlib1g-dev libncurses5-dev libncursesw5-dev \
-          libtinfo5 cmake libffi-dev libssl-dev \
-          libltdl-dev
+          cmake libffi-dev libssl-dev libltdl-dev
     
     - name: Install Python dependencies
       run: |
@@ -46,10 +45,18 @@ jobs:
         sed -i 's/^log_level = .*/log_level = 2/' buildozer.spec
         sed -i 's/^warn_on_root = .*/warn_on_root = 1/' buildozer.spec
         
-        buildozer -v android debug
+        buildozer -v android debug 2>&1 | tee build.log
     
     - name: Upload APK
+      if: always()
       uses: actions/upload-artifact@v4
       with:
         name: PatentCalc-APK
         path: bin/*.apk
+    
+    - name: Upload build log
+      if: failure()
+      uses: actions/upload-artifact@v4
+      with:
+        name: build-log
+        path: build.log
