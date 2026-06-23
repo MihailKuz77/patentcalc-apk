@@ -45,17 +45,22 @@ jobs:
         sed -i 's/^log_level = .*/log_level = 2/' buildozer.spec
         sed -i 's/^warn_on_root = .*/warn_on_root = 1/' buildozer.spec
         
+        # Запускаем сборку и сохраняем лог
         buildozer -v android debug 2>&1 | tee build.log
+        
+        # Показываем содержимое папки bin
+        echo "=== Contents of bin/ ==="
+        ls -la bin/ || echo "No bin directory"
+        echo "========================"
     
     - name: Upload APK
-      if: always()
       uses: actions/upload-artifact@v4
       with:
         name: PatentCalc-APK
         path: bin/*.apk
     
-    - name: Upload build log
-      if: failure()
+    - name: Upload build log (always)
+      if: always()
       uses: actions/upload-artifact@v4
       with:
         name: build-log
