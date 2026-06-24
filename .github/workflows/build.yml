@@ -14,23 +14,24 @@ jobs:
     
     - name: Build APK with Docker
       run: |
-        # Создаём директорию для сборки
         mkdir -p build_apk
         cp main.py build_apk/
         
-        # Создаём Dockerfile
         cat > build_apk/Dockerfile << 'DOCKEREOF'
-        FROM python:3.11-slim
+        FROM ubuntu:22.04
+        
+        ENV DEBIAN_FRONTEND=noninteractive
         
         RUN apt-get update && apt-get install -y \
             git zip unzip openjdk-17-jdk \
+            python3 python3-pip \
             autoconf libtool pkg-config \
             zlib1g-dev libncurses5-dev libncursesw5-dev \
             cmake libffi-dev libssl-dev libltdl-dev \
             wget && \
             rm -rf /var/lib/apt/lists/*
         
-        RUN pip install buildozer cython pillow qrcode
+        RUN pip3 install buildozer cython pillow qrcode
         
         WORKDIR /app
         COPY main.py /app/
@@ -49,23 +50,17 @@ jobs:
             sed -i 's/^android.accept_sdk_license = .*/android.accept_sdk_license = True/' buildozer.spec && \
             sed -i 's/^android.skip_update = .*/android.skip_update = True/' buildozer.spec && \
             sed -i 's/^android.ndk_api = .*/android.ndk_api = 26/' buildozer.spec
-            
+        
         CMD ["buildozer", "-v", "android", "debug"]
         DOCKEREOF
         
-        # Собираем Docker-образ
         docker build -t patentcalc-builder build_apk/
-        
-        # Запускаем сборку
         docker run --name patentcalc-container patentcalc-builder || true
-        
-        # Копируем результат
         docker cp patentcalc-container:/app/bin/. ./bin/ 2>/dev/null || true
-        docker cp patentcalc-container:/app/build.log ./ 2>/dev/null || true
         
-        echo "=== bin/ contents ==="
+        echo "=== bin/ ==="
         ls -la bin/ 2>/dev/null || echo "No bin/"
-      
+    
     - name: Upload APK
       uses: actions/upload-artifact@v4
       with:
