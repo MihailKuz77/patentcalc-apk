@@ -21,7 +21,6 @@ jobs:
         FROM ubuntu:22.04
         
         ENV DEBIAN_FRONTEND=noninteractive
-        ENV BUILDOZER_ALLOW_ROOT=1
         
         RUN apt-get update && apt-get install -y \
             git zip unzip openjdk-17-jdk \
@@ -59,22 +58,16 @@ jobs:
         docker build -t patentcalc-builder build_apk/
         
         echo "=== Running container ==="
-        docker run --name patentcalc-container patentcalc-builder 2>&1 | tee container.log || true
+        docker run -e BUILDOZER_ALLOW_ROOT=1 --name patentcalc-container patentcalc-builder 2>&1 | tee container.log || true
         
-        echo "=== Container logs ==="
-        cat container.log | tail -100
+        echo "=== Container logs (last 50 lines) ==="
+        tail -50 container.log
         
         echo "=== Copying bin/ ==="
         docker cp patentcalc-container:/app/bin/. ./bin/ 2>/dev/null && echo "bin/ copied" || echo "bin/ not found"
-        docker cp patentcalc-container:/app/buildozer.log ./ 2>/dev/null || true
         
         echo "=== bin/ contents ==="
         ls -la bin/ 2>/dev/null || echo "No bin/"
-        
-        echo "=== Listing all files in container ==="
-        docker exec patentcalc-container ls -la /app/ 2>/dev/null || true
-        docker exec patentcalc-container ls -la /app/bin/ 2>/dev/null || true
-        docker exec patentcalc-container ls -la /app/.buildozer/ 2>/dev/null || true
     
     - name: Upload APK
       uses: actions/upload-artifact@v4
@@ -87,6 +80,4 @@ jobs:
       uses: actions/upload-artifact@v4
       with:
         name: build-logs
-        path: |
-          container.log
-          buildozer.log
+        path: container.log
