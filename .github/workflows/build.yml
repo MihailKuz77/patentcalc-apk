@@ -1,95 +1,73 @@
-name: Build APK
+name: Build APK via Docker
 
 on:
   workflow_dispatch:
 
 jobs:
   build:
-    runs-on: ubuntu-22.04
-    timeout-minutes: 45
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
     
     steps:
     - name: Checkout code
       uses: actions/checkout@v4
     
-    - name: Setup Java
-      uses: actions/setup-java@v4
-      with:
-        java-version: '17'
-        distribution: 'temurin'
-    
-    - name: Setup Python
-      uses: actions/setup-python@v5
-      with:
-        python-version: '3.11'
-    
-    - name: Install system dependencies
+    - name: Build APK with Docker
       run: |
-        sudo apt-get update -qq
-        sudo apt-get install -y -qq git zip unzip python3-pip autoconf libtool pkg-config zlib1g-dev libncurses5-dev libncursesw5-dev cmake libffi-dev libssl-dev libltdl-dev
-    
-    - name: Install Python dependencies
-      run: pip install buildozer cython pillow qrcode
-    
-    - name: Setup Android SDK manually
-      run: |
-        # Создаём директории
-        ANDROID_SDK_ROOT=/home/runner/.buildozer/android/platform/android-sdk
-        mkdir -p $ANDROID_SDK_ROOT/licenses
+        # Создаём директорию для сборки
+        mkdir -p build_apk
+        cp main.py build_apk/
         
-        # Скачиваем cmdline-tools (вместо устаревших tools)
-        wget -q https://dl.google.com/android/repository/commandlinetools-linux-11076708_latest.zip
-        unzip -q commandlinetools-linux-11076708_latest.zip
-        mkdir -p $ANDROID_SDK_ROOT/cmdline-tools
-        mv cmdline-tools $ANDROID_SDK_ROOT/cmdline-tools/latest
+        # Создаём Dockerfile
+        cat > build_apk/Dockerfile << 'DOCKEREOF'
+        FROM python:3.11-slim
         
-        # Принимаем лицензии
-        yes | $ANDROID_SDK_ROOT/cmdline-tools/latest/bin/sdkmanager --sdk_root=$ANDROID_SDK_ROOT --licenses 2>/dev/null || true
+        RUN apt-get update && apt-get install -y \
+            git zip unzip openjdk-17-jdk-headless \
+            autoconf libtool pkg-config \
+            zlib1g-dev libncurses5-dev libncursesw5-dev \
+            cmake libffi-dev libssl-dev libltdl-dev \
+            wget && \
+            rm -rf /var/lib/apt/lists/*
         
-        # Устанавливаем нужные компоненты
-        $ANDROID_SDK_ROOT/cmdline-tools/latest/bin/sdkmanager --sdk_root=$ANDROID_SDK_ROOT "platform-tools" "platforms;android-33" "build-tools;33.0.2" 2>/dev/null || true
-    
-    - name: Build APK
-      run: |
-        buildozer init
+        RUN pip install buildozer cython pillow qrcode
         
-        # Настройка spec
-        sed -i 's/^title = .*/title = PatentCalc/' buildozer.spec
-        sed -i 's/^package.name = .*/package.name = patentcalc/' buildozer.spec
-        sed -i 's/^package.domain = .*/package.domain = com.patentcalc/' buildozer.spec
-        sed -i 's/^requirements = .*/requirements = python3,kivy==2.3.0,qrcode,pillow/' buildozer.spec
-        sed -i 's/^android.permissions = .*/android.permissions = INTERNET/' buildozer.spec
-        sed -i 's/^android.api = .*/android.api = 33/' buildozer.spec
-        sed -i 's/^android.minapi = .*/android.minapi = 26/' buildozer.spec
-        sed -i 's/^android.ndk = .*/android.ndk = 25b/' buildozer.spec
-        sed -i 's/^android.ndk_api = .*/android.ndk_api = 26/' buildozer.spec
-        sed -i 's/^orientation = .*/orientation = portrait/' buildozer.spec
-        sed -i 's/# android.arch = armeabi-v7a/android.arch = arm64-v8a/' buildozer.spec
-        sed -i 's/^log_level = .*/log_level = 2/' buildozer.spec
-        sed -i 's/^warn_on_root = .*/warn_on_root = 1/' buildozer.spec
-        sed -i 's/^android.accept_sdk_license = .*/android.accept_sdk_license = True/' buildozer.spec
+        WORKDIR /app
+        COPY main.py /app/
         
-        # Отключаем автоматическую установку sdk (мы уже установили)
-        sed -i 's/^android.skip_update = .*/android.skip_update = True/' buildozer.spec
+        RUN buildozer init && \
+            sed -i 's/^title = .*/title = PatentCalc/' buildozer.spec && \
+            sed -i 's/^package.name = .*/package.name = patentcalc/' buildozer.spec && \
+            sed -i 's/^package.domain = .*/package.domain = com.patentcalc/' buildozer.spec && \
+            sed -i 's/^requirements = .*/requirements = python3,kivy,qrcode,pillow/' buildozer.spec && \
+            sed -i 's/^android.api = .*/android.api = 33/' buildozer.spec && \
+            sed -i 's/^android.minapi = .*/android.minapi = 26/' buildozer.spec && \
+            sed -i 's/^android.ndk = .*/android.ndk = 25b/' buildozer.spec && \
+            sed -i 's/^orientation = .*/orientation = portrait/' buildozer.spec && \
+            sed -i 's/# android.arch = armeabi-v7a/android.arch = arm64-v8a/' buildozer.spec && \
+            sed -i 's/^log_level = .*/log_level = 2/' buildozer.spec && \
+            sed -i 's/^android.accept_sdk_license = .*/android.accept_sdk_license = True/' buildozer.spec && \
+            sed -i 's/^android.skip_update = .*/android.skip_update = True/' buildozer.spec && \
+            sed -i 's/^android.ndk_api = .*/android.ndk_api = 26/' buildozer.spec
+            
+        CMD buildozer -v android debug
+        DOCKEREOF
         
-        echo "=== Spec configured ==="
-        grep -E "^(title|package|requirements|android\.)" buildozer.spec
+        # Собираем Docker-образ
+        docker build -t patentcalc-builder build_apk/
         
-        # Запуск сборки
-        buildozer -v android debug 2>&1 | tee build.log
-        EXIT_CODE=${PIPESTATUS[0]}
+        # Запускаем сборку
+        docker run --name patentcalc-container patentcalc-builder || true
         
-        echo "=== bin/ ==="
+        # Копируем результат
+        docker cp patentcalc-container:/app/bin/. ./bin/ 2>/dev/null || true
+        docker cp patentcalc-container:/app/build.log ./ 2>/dev/null || true
+        
+        echo "=== bin/ contents ==="
         ls -la bin/ 2>/dev/null || echo "No bin/"
-        
-        exit $EXIT_CODE
-      shell: bash
-    
-    - name: Upload artifacts
-      if: always()
+      
+    - name: Upload APK
       uses: actions/upload-artifact@v4
       with:
-        name: build-results
-        path: |
-          build.log
-          bin/
+        name: PatentCalc-APK
+        path: bin/*.apk
