@@ -55,15 +55,38 @@ jobs:
         CMD ["buildozer", "-v", "android", "debug"]
         DOCKEREOF
         
+        echo "=== Building Docker image ==="
         docker build -t patentcalc-builder build_apk/
-        docker run --name patentcalc-container patentcalc-builder || true
-        docker cp patentcalc-container:/app/bin/. ./bin/ 2>/dev/null || true
         
-        echo "=== bin/ ==="
+        echo "=== Running container ==="
+        docker run --name patentcalc-container patentcalc-builder 2>&1 | tee container.log || true
+        
+        echo "=== Container logs ==="
+        cat container.log | tail -100
+        
+        echo "=== Copying bin/ ==="
+        docker cp patentcalc-container:/app/bin/. ./bin/ 2>/dev/null && echo "bin/ copied" || echo "bin/ not found"
+        docker cp patentcalc-container:/app/buildozer.log ./ 2>/dev/null || true
+        
+        echo "=== bin/ contents ==="
         ls -la bin/ 2>/dev/null || echo "No bin/"
+        
+        echo "=== Listing all files in container ==="
+        docker exec patentcalc-container ls -la /app/ 2>/dev/null || true
+        docker exec patentcalc-container ls -la /app/bin/ 2>/dev/null || true
+        docker exec patentcalc-container ls -la /app/.buildozer/ 2>/dev/null || true
     
     - name: Upload APK
       uses: actions/upload-artifact@v4
       with:
         name: PatentCalc-APK
         path: bin/*.apk
+    
+    - name: Upload logs
+      if: always()
+      uses: actions/upload-artifact@v4
+      with:
+        name: build-logs
+        path: |
+          container.log
+          buildozer.log
