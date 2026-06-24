@@ -6,12 +6,13 @@ on:
 jobs:
   build:
     runs-on: ubuntu-22.04
+    timeout-minutes: 45
     
     steps:
     - name: Checkout code
       uses: actions/checkout@v4
     
-    - name: Setup Java 17
+    - name: Setup Java
       uses: actions/setup-java@v4
       with:
         java-version: '17'
@@ -24,31 +25,22 @@ jobs:
     
     - name: Install system dependencies
       run: |
-        sudo apt-get update
-        sudo apt-get install -y git zip unzip python3-pip autoconf libtool pkg-config zlib1g-dev libncurses5-dev libncursesw5-dev cmake libffi-dev libssl-dev libltdl-dev
+        sudo apt-get update -qq
+        sudo apt-get install -y -qq git zip unzip python3-pip autoconf libtool pkg-config zlib1g-dev libncurses5-dev libncursesw5-dev cmake libffi-dev libssl-dev libltdl-dev
     
     - name: Install Python dependencies
-      run: |
-        pip install buildozer cython pillow qrcode
-    
-    - name: Accept Android licenses
-      run: |
-        mkdir -p /usr/local/lib/android/sdk/licenses
-        echo -e "\n24333f8a63b6825ea9c5514f83c2829b004d1fee" > /usr/local/lib/android/sdk/licenses/android-sdk-license
-        echo -e "\nd56f5187479451eabf01fb78af6dfcb131a6481e" >> /usr/local/lib/android/sdk/licenses/android-sdk-license
-        echo -e "\n84831b9409646a918e30573bab4c9c91346d8abd" > /usr/local/lib/android/sdk/licenses/android-sdk-preview-license
+      run: pip install buildozer cython pillow qrcode
     
     - name: Build APK
       run: |
-        export ANDROID_HOME=/home/runner/.buildozer/android/platform/android-sdk
-        export ANDROID_SDK_ROOT=$ANDROID_HOME
-        
+        set -e
         buildozer init
         
+        # Настройка spec
         sed -i 's/^title = .*/title = PatentCalc/' buildozer.spec
         sed -i 's/^package.name = .*/package.name = patentcalc/' buildozer.spec
         sed -i 's/^package.domain = .*/package.domain = com.patentcalc/' buildozer.spec
-        sed -i 's/^requirements = .*/requirements = python3,kivy,qrcode,pillow/' buildozer.spec
+        sed -i 's/^requirements = .*/requirements = python3,kivy==2.3.0,qrcode,pillow/' buildozer.spec
         sed -i 's/^android.permissions = .*/android.permissions = INTERNET/' buildozer.spec
         sed -i 's/^android.api = .*/android.api = 33/' buildozer.spec
         sed -i 's/^android.minapi = .*/android.minapi = 26/' buildozer.spec
@@ -58,23 +50,30 @@ jobs:
         sed -i 's/^log_level = .*/log_level = 2/' buildozer.spec
         sed -i 's/^warn_on_root = .*/warn_on_root = 1/' buildozer.spec
         
-        # Принимаем лицензии через sdkmanager
-        yes | $ANDROID_HOME/tools/bin/sdkmanager --sdk_root=$ANDROID_HOME --licenses 2>/dev/null || true
-        
+        # Запуск сборки
         buildozer -v android debug 2>&1 | tee build.log
+        EXIT_CODE=${PIPESTATUS[0]}
         
-        echo "=== Contents of bin/ ==="
-        ls -la bin/ || echo "No bin directory"
+        echo "Build exit code: $EXIT_CODE"
+        echo "=== bin/ contents ==="
+        ls -la bin/ 2>/dev/null || echo "bin/ does not exist"
+        echo "=== .buildozer contents ==="
+        ls -la .buildozer/ 2>/dev/null || echo ".buildozer/ does not exist"
+        
+        exit $EXIT_CODE
+      shell: bash
     
-    - name: Upload APK
-      uses: actions/upload-artifact@v4
-      with:
-        name: PatentCalc-APK
-        path: bin/*.apk
+    - name: Save build log
+      if: always()
+      run: |
+        mkdir -p artifacts
+        cp build.log artifacts/ 2>/dev/null || echo "No build.log"
+        cp -r bin artifacts/ 2>/dev/null || echo "No bin/"
+        cp -r .buildozer artifacts/ 2>/dev/null || echo "No .buildozer/"
     
-    - name: Upload build log
+    - name: Upload all artifacts
       if: always()
       uses: actions/upload-artifact@v4
       with:
-        name: build-log
-        path: build.log
+        name: build-results
+        path: artifacts/
