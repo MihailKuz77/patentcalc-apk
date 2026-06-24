@@ -31,17 +31,17 @@ jobs:
           autoconf libtool pkg-config \
           zlib1g-dev libncurses5-dev libncursesw5-dev \
           cmake libffi-dev libssl-dev libltdl-dev \
-          libpython3-dev libpython3.11-dev
+          libpython3-dev
         
     - name: Install python-for-android
-      run: |
-        pip install python-for-android cython pillow qrcode kivy==2.3.0
+      run: pip install python-for-android cython pillow qrcode kivy==2.3.0
         
     - name: Download Android NDK
       run: |
         wget -q https://dl.google.com/android/repository/android-ndk-r25b-linux.zip
         unzip -q android-ndk-r25b-linux.zip
         echo "NDK_HOME=$PWD/android-ndk-r25b" >> $GITHUB_ENV
+        echo "NDK downloaded"
         
     - name: Download Android SDK
       run: |
@@ -49,16 +49,16 @@ jobs:
         cd android-sdk
         wget -q https://dl.google.com/android/repository/commandlinetools-linux-11076708_latest.zip
         unzip -q commandlinetools-linux-11076708_latest.zip
-        mkdir -p cmdline-tools
-        mv cmdline-tools cmdline-tools/latest 2>/dev/null || true
-        yes | cmdline-tools/latest/bin/sdkmanager --sdk_root=$PWD --licenses || true
-        cmdline-tools/latest/bin/sdkmanager --sdk_root=$PWD "platform-tools" "platforms;android-33" "build-tools;33.0.2"
+        mkdir -p cmdline-tools/latest
+        cp -r cmdline-tools/* cmdline-tools/latest/ 2>/dev/null || true
+        yes | ./cmdline-tools/latest/bin/sdkmanager --sdk_root=$PWD --licenses 2>/dev/null || true
+        ./cmdline-tools/latest/bin/sdkmanager --sdk_root=$PWD "platform-tools" "platforms;android-33" "build-tools;33.0.2"
         echo "ANDROID_HOME=$PWD" >> $GITHUB_ENV
         cd ..
+        echo "SDK installed"
         
     - name: Build APK
       run: |
-        # Создаём конфигурацию p4a
         cat > .p4a << 'EOF'
         --name PatentCalc
         --package com.patentcalc.patentcalc
@@ -75,21 +75,13 @@ jobs:
         --debug
         EOF
         
-        # Показываем конфиг
-        cat .p4a
+        python -m pythonforandroid.toolchain apk --config .p4a 2>&1 | tee build.log
         
-        # Запускаем сборку
-        python -m pythonforandroid.toolchain apk --config .p4a
-        
-        # Ищем APK
         echo "=== Looking for APK ==="
         find . -name "*.apk" -type f
         
-        # Копируем APK в bin/
         mkdir -p bin
         find . -name "*.apk" -type f -exec cp {} bin/ \;
-        
-        echo "=== bin/ ==="
         ls -la bin/
     
     - name: Upload APK
@@ -103,4 +95,4 @@ jobs:
       uses: actions/upload-artifact@v4
       with:
         name: debug-logs
-        path: /home/runner/.local/share/python-for-android/
+        path: build.log
